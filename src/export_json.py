@@ -57,7 +57,7 @@ def gather_latest(conn, horizon: int, top_n: int) -> dict:
     rows = conn.execute(
         """
         SELECT p.rank, p.symbol, p.score, p.price_at_pred, p.coin_id,
-               s.name, s.pct_7d, s.pct_30d, s.market_cap
+               s.name, s.pct_7d, s.pct_30d, s.market_cap, s.image_url
         FROM predictions p
         LEFT JOIN snapshots s
           ON s.coin_id = p.coin_id
@@ -84,6 +84,9 @@ def gather_latest(conn, horizon: int, top_n: int) -> dict:
                 "change7d": r[6],
                 "change30d": r[7],
                 "marketCap": r[8],
+                # アプリ側はランキング銘柄のアイコンを持っていないため、
+                # CoinGecko のロゴURLをそのまま渡す
+                "iconUrl": r[9],
             }
         )
 
