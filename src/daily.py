@@ -52,6 +52,19 @@ def step_predict():
     predict.run_predict(horizon=7, top_n=20, model_tag=None, skip_importance=True)
 
 
+def make_export_json_step(dashboard_out: str | None):
+    """資産管理アプリが取得するための予測 JSON を、ダッシュボードと同じ場所へ出す。"""
+    def step_export_json():
+        import export_json
+        target = (
+            Path(dashboard_out).parent / "prediction.json"
+            if dashboard_out
+            else None
+        )
+        export_json.run_export(str(target) if target else None)
+    return step_export_json
+
+
 def make_dashboard_step(out_path: str | None):
     def step_dashboard():
         import dashboard
@@ -75,6 +88,7 @@ def build_steps(dashboard_out: str | None):
         ("icons", step_icons, False),
         ("predict", step_predict, False),
         ("dashboard", make_dashboard_step(dashboard_out), False),
+        ("export_json", make_export_json_step(dashboard_out), False),
     ]
 
 
