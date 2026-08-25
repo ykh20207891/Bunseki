@@ -1,0 +1,12 @@
+{
+  "_note": "公開リポジトリなので coingecko_api_key はここに書かないこと。ローカルは環境変数 COINGECKO_API_KEY、GitHub Actions は Secrets を使う。",
+  "vs_currency": "usd",
+  "top_n": 500,
+  "per_page": 250,
+  "coingecko_api_key": "",
+  "coingecko_api_plan": "demo",
+  "request_timeout": 45,
+  "max_retry": 6,
+  "sleep_between_pages": 8.0,
+  "keep_raw_json": true
+}

@@ -1,0 +1,28 @@
+# 蓄積データは git に入れない。
+# crypto.db は 23MB あり、毎日コミットすると履歴が年間数GBに膨れるため、
+# GitHub Release のアセットとして保管する（履歴に残らず上書きできる）。
+data/
+icons/
+raw/
+logs/
+reports/
+site/
+
+# ローカル設定（APIキーを書く場合はこちら。公開リポジトリなので config.json には書かない）
+config.local.json
+.env
+
+# 一時ファイル
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+*.db-shm
+*.db-wal
+
+# Release へ手動アップロードするためのバンドル（git には入れない）
+crypto.db.gz
+icons.tar.gz
+raw.tar.gz

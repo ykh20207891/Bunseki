@@ -1,0 +1,126 @@
+name: 日次収集
+
+on:
+  schedule:
+    # GitHub Actions の cron は UTC。00:10 UTC = 09:10 JST。
+    # UTC の日付が変わった直後に取ることで snapshot_date が安定する。
+    - cron: "10 0 * * *"
+  workflow_dispatch:        # 手動実行も可能にしておく
+
+permissions:
+  contents: write           # Release アセットの更新に必要
+  pages: write
+  id-token: write
+
+# 前の実行が終わる前に次が始まると DB を壊すので直列化する
+concurrency:
+  group: daily
+  cancel-in-progress: false
+
+env:
+  DATA_TAG: data            # DB とアイコンを置いておく Release のタグ
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: 依存パッケージを導入
+        run: pip install -r requirements.txt
+
+      - name: 前回までのデータを Release から復元
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data icons raw
+          if gh release view "$DATA_TAG" >/dev/null 2>&1; then
+            gh release download "$DATA_TAG" --pattern 'crypto.db.gz' --clobber || true
+            gh release download "$DATA_TAG" --pattern 'icons.tar.gz'  --clobber || true
+            gh release download "$DATA_TAG" --pattern 'raw.tar.gz'    --clobber || true
+            # bash -e で走るので [ -f x ] && cmd は書けない（false で step ごと落ちる）
+            if [ -f crypto.db.gz ]; then gunzip -c crypto.db.gz > data/crypto.db; fi
+            if [ -f icons.tar.gz ]; then tar xzf icons.tar.gz; fi
+            if [ -f raw.tar.gz ];   then tar xzf raw.tar.gz;   fi
+          else
+            echo "::warning::Release '$DATA_TAG' がありません。空の DB から開始します。"
+          fi
+          python - <<'PY'
+          import os, sqlite3
+          p = "data/crypto.db"
+          if os.path.exists(p):
+              n = sqlite3.connect(p).execute(
+                  "SELECT COUNT(*) FROM sqlite_master WHERE type='table'").fetchone()[0]
+              print(f"復元した DB: {os.path.getsize(p)/1e6:.1f} MB / テーブル {n} 個")
+          else:
+              print("DB なし（初回）")
+          PY
+
+      - name: 日次パイプラインを実行
+        env:
+          # 無料の Demo キーを Settings > Secrets に登録しておくとレート制限が緩和される。
+          # 公開リポジトリなので config.json には絶対に書かないこと。
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          PYTHONUTF8: "1"
+        run: python src/daily.py --dashboard-out site/index.html
+
+      - name: 実行結果を確認
+        run: |
+          python - <<'PY'
+          import sqlite3
+          c = sqlite3.connect("data/crypto.db")
+          days, rows = c.execute(
+              "SELECT COUNT(DISTINCT snapshot_date), COUNT(*) FROM snapshots").fetchone()
+          latest = c.execute("SELECT MAX(snapshot_date) FROM snapshots").fetchone()[0]
+          news = c.execute("SELECT COUNT(*) FROM news_articles").fetchone()[0]
+          preds = c.execute("SELECT COUNT(DISTINCT predicted_on) FROM predictions").fetchone()[0]
+          print(f"スナップショット {days} 日 / {rows:,} 行（最新 {latest}）")
+          print(f"ニュース {news:,} 件 / 予測 {preds} 回")
+          PY
+
+      - name: データを Release に保存
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import sqlite3
+          # WAL を本体に畳んでからアップロードする（-wal を持ち出さずに済む）
+          sqlite3.connect("data/crypto.db").execute("PRAGMA wal_checkpoint(TRUNCATE)")
+          PY
+          gzip -c data/crypto.db > crypto.db.gz
+          tar czf icons.tar.gz icons/
+          tar czf raw.tar.gz raw/
+          gh release view "$DATA_TAG" >/dev/null 2>&1 || \
+            gh release create "$DATA_TAG" --title "蓄積データ" \
+              --notes "日次パイプラインが更新する SQLite DB とアイコン。git 履歴を汚さないため Release に置いている。"
+          gh release upload "$DATA_TAG" crypto.db.gz icons.tar.gz raw.tar.gz --clobber
+
+      - name: ダッシュボードを Pages 用に受け渡し
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: ログを残す（失敗時の調査用）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ github.run_number }}
+          path: logs/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  deploy:
+    needs: run
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

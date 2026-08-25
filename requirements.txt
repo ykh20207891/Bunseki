@@ -1,0 +1,11 @@
+# 日次収集 (collect.py / backfill.py) に必要なもの
+#   truststore は Windows のネイティブ証明書検証を使うため。
+#   この PC は Avast の Web シールドが HTTPS を復号しており、
+#   OpenSSL 標準の検証だと証明書エラーで通信できないため必須。
+truststore>=0.10
+certifi>=2024.0
+
+# 分析・予測 (features.py / backtest.py / predict.py / evaluate.py) に必要なもの
+numpy>=2.0
+pandas>=2.2
+scikit-learn>=1.5

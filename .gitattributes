@@ -1,0 +1,19 @@
+# 既定はテキストとして正規化（リポジトリ内は LF）
+* text=auto
+
+# Windows バッチは必ず CRLF で取り出す。
+# LF だと cmd.exe が解析に失敗し、何も実行しないまま終了コード 0 を返すため
+# （実際にそれで日次実行が空振りした）。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# シェル/ワークフローは必ず LF（Linux ランナーで実行される）
+*.sh  text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# バイナリ扱い
+*.png binary
+*.jpg binary
+*.gz  binary
+*.db  binary
