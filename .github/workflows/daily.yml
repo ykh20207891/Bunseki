@@ -67,6 +67,10 @@ jobs:
           # 無料の Demo キーを Settings > Secrets に登録しておくとレート制限が緩和される。
           # 公開リポジトリなので config.json には絶対に書かないこと。
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          # Workers AI（銘柄マッチ検証・センチメント・翻訳・市場サマリー）。
+          # 未設定なら AI 補強はスキップされ、従来の辞書ベースで動く。
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_AI_TOKEN: ${{ secrets.CF_AI_TOKEN }}
           PYTHONUTF8: "1"
         run: python src/daily.py --dashboard-out site/index.html
 

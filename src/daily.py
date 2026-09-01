@@ -47,6 +47,13 @@ def step_icons():
     icons.fetch_source_icons(refresh=False)
 
 
+def step_ai_enrich():
+    """Workers AI での補強（銘柄マッチ検証・センチメント・市場サマリー）。
+    CF_ACCOUNT_ID / CF_AI_TOKEN が未設定なら何もせず抜ける。"""
+    import ai_enrich
+    ai_enrich.run()
+
+
 def step_predict():
     import predict
     predict.run_predict(horizon=7, top_n=20, model_tag=None, skip_importance=True)
@@ -86,6 +93,7 @@ def build_steps(dashboard_out: str | None):
         ("news", step_news, False),
         ("translate", step_translate, False),
         ("icons", step_icons, False),
+        ("ai_enrich", step_ai_enrich, False),
         ("predict", step_predict, False),
         ("dashboard", make_dashboard_step(dashboard_out), False),
         ("export_json", make_export_json_step(dashboard_out), False),

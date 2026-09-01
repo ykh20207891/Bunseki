@@ -108,6 +108,17 @@ def polish(text: str) -> str:
 
 
 def translate_one(text: str, timeout: int = 30) -> str | None:
+    # Workers AI が使えるならそちらを優先する。MyMemory は無料枠の
+    # レート制限が厳しく、日次バッチが途中で止まることがあるため。
+    try:
+        import ai
+        if ai.is_enabled():
+            out = ai.translate(text[:480], "en", "ja")
+            if out and out.strip().lower() != text.strip().lower():
+                return polish(out)
+    except Exception:  # noqa: BLE001
+        pass  # 失敗したら従来の MyMemory にフォールバック
+
     url = API + "?" + urllib.parse.urlencode({"q": text[:480], "langpair": "en|ja"})
     payload = json.loads(http_get_text(url, {"User-Agent": USER_AGENT}, timeout, 2))
     if str(payload.get("responseStatus")) != "200":
