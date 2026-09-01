@@ -104,18 +104,138 @@ def compute_bands() -> dict:
         return DEFAULT_BANDS
 
 
-def gather_latest(conn, horizon: int, top_n: int) -> dict:
-    """predictions テーブルの最新予測を、表示に必要な情報とともに取り出す。"""
-    head = conn.execute(
+def _latest_monday(conn, horizon: int) -> tuple[str, str] | None:
+    """直近の「月曜日に出した予測」を返す。無ければ最新の予測で代替する。
+
+    データ収集は毎日続けるが、表示するランキングは週1回（月曜）に固定する。
+    毎日順位が入れ替わると、7日後の答え合わせができないため。
+    """
+    row = conn.execute(
         """
         SELECT predicted_on, model_tag
         FROM predictions
         WHERE horizon_days = ?
+          AND CAST(strftime('%w', predicted_on) AS INTEGER) = 1
         ORDER BY predicted_on DESC
         LIMIT 1
         """,
         (horizon,),
     ).fetchone()
+    if row:
+        return row[0], row[1]
+
+    # まだ月曜の予測が無い運用初期は、最新の予測をそのまま使う
+    row = conn.execute(
+        "SELECT predicted_on, model_tag FROM predictions "
+        "WHERE horizon_days = ? ORDER BY predicted_on DESC LIMIT 1",
+        (horizon,),
+    ).fetchone()
+    return (row[0], row[1]) if row else None
+
+
+def _price_on_or_after(conn, coin_id: str, date: str) -> float | None:
+    """指定日以降で最も近い日の価格。snapshots に無ければ price_history を見る。"""
+    row = conn.execute(
+        "SELECT price FROM snapshots WHERE coin_id = ? AND snapshot_date >= ? "
+        "ORDER BY snapshot_date ASC LIMIT 1",
+        (coin_id, date),
+    ).fetchone()
+    if row and row[0] is not None:
+        return float(row[0])
+
+    row = conn.execute(
+        "SELECT price FROM price_history WHERE coin_id = ? AND date >= ? "
+        "ORDER BY date ASC LIMIT 1",
+        (coin_id, date),
+    ).fetchone()
+    return float(row[0]) if row and row[0] is not None else None
+
+
+def gather_review(conn, horizon: int, top_n: int, current_on: str | None) -> dict | None:
+    """1つ前の月曜予測について、実際にどうなったかを集計する（答え合わせ）。"""
+    row = conn.execute(
+        """
+        SELECT predicted_on, model_tag
+        FROM predictions
+        WHERE horizon_days = ?
+          AND CAST(strftime('%w', predicted_on) AS INTEGER) = 1
+          AND predicted_on < COALESCE(?, '9999-12-31')
+        ORDER BY predicted_on DESC
+        LIMIT 1
+        """,
+        (horizon, current_on),
+    ).fetchone()
+    if not row:
+        return None
+
+    predicted_on, model_tag = row[0], row[1]
+
+    # 予測から horizon 日後の日付
+    target = conn.execute(
+        "SELECT date(?, ?)", (predicted_on, f"+{horizon} day")
+    ).fetchone()[0]
+
+    rows = conn.execute(
+        """
+        SELECT p.rank, p.symbol, p.coin_id, p.price_at_pred, s.name, s.image_url
+        FROM predictions p
+        LEFT JOIN (
+            SELECT coin_id, name, image_url, MAX(snapshot_date) FROM snapshots
+            GROUP BY coin_id
+        ) s ON s.coin_id = p.coin_id
+        WHERE p.horizon_days = ? AND p.predicted_on = ? AND p.model_tag = ?
+        ORDER BY p.rank ASC
+        LIMIT ?
+        """,
+        (horizon, predicted_on, model_tag, top_n),
+    ).fetchall()
+
+    items = []
+    ups = 0
+    total_ret = 0.0
+    scored = 0
+
+    for r in rows:
+        rank, symbol, coin_id, price_before = r[0], r[1], r[2], r[3]
+        price_after = _price_on_or_after(conn, coin_id, target)
+
+        change = None
+        if price_before and price_after and price_before > 0:
+            change = (price_after - price_before) / price_before * 100
+            scored += 1
+            total_ret += change
+            if change > 0:
+                ups += 1
+
+        items.append(
+            {
+                "rank": rank,
+                "symbol": (symbol or "").upper(),
+                "name": r[4] or symbol,
+                "iconUrl": r[5],
+                "priceBefore": price_before,
+                "priceAfter": price_after,
+                "changePct": round(change, 2) if change is not None else None,
+            }
+        )
+
+    if not items:
+        return None
+
+    return {
+        "predictedOn": predicted_on,
+        "evaluatedOn": target,
+        "items": items,
+        "upCount": ups,
+        "scored": scored,
+        "upRate": round(ups / scored, 4) if scored else None,
+        "avgChangePct": round(total_ret / scored, 2) if scored else None,
+    }
+
+
+def gather_latest(conn, horizon: int, top_n: int) -> dict:
+    """表示用の予測（直近の月曜分）を、必要な情報とともに取り出す。"""
+    head = _latest_monday(conn, horizon)
 
     if not head:
         return {"predictedOn": None, "horizonDays": horizon, "items": []}
@@ -197,6 +317,8 @@ def gather_latest(conn, horizon: int, top_n: int) -> dict:
         "universeSize": total,
         # 画面で「実績ではこうだった」と示すための基準値
         "baseline": bands.get("overall", {}),
+        # 先週の予測が実際どうなったかの答え合わせ
+        "review": gather_review(conn, horizon, len(items) or top_n, predicted_on),
         "items": items,
     }
 
