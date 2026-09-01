@@ -59,6 +59,12 @@ def step_predict():
     predict.run_predict(horizon=7, top_n=20, model_tag=None, skip_importance=True)
 
 
+def step_coin_meta():
+    """ランキング上位のチェーン/取扱取引所を取得（予測の後に実行する）。"""
+    import coin_meta
+    coin_meta.run(top_n=10)
+
+
 def make_export_json_step(dashboard_out: str | None):
     """資産管理アプリが取得するための予測 JSON を、ダッシュボードと同じ場所へ出す。"""
     def step_export_json():
@@ -95,6 +101,7 @@ def build_steps(dashboard_out: str | None):
         ("icons", step_icons, False),
         ("ai_enrich", step_ai_enrich, False),
         ("predict", step_predict, False),
+        ("coin_meta", step_coin_meta, False),
         ("dashboard", make_dashboard_step(dashboard_out), False),
         ("export_json", make_export_json_step(dashboard_out), False),
     ]

@@ -271,6 +271,17 @@ def gather_latest(conn, horizon: int, top_n: int) -> dict:
         (horizon, predicted_on, model_tag, top_n),
     ).fetchall()
 
+    # チェーン/取引所（coin_meta。未取得なら空で出す）
+    meta: dict[str, dict] = {}
+    try:
+        for m in conn.execute("SELECT coin_id, chains, exchanges FROM coin_meta"):
+            meta[m[0]] = {
+                "chains": json.loads(m[1] or "[]"),
+                "exchanges": json.loads(m[2] or "[]"),
+            }
+    except Exception:  # noqa: BLE001
+        pass  # テーブル未作成なら省略
+
     items = []
     for r in rows:
         band_key = _band_key(r[0] or 0, total)
@@ -293,6 +304,8 @@ def gather_latest(conn, horizon: int, top_n: int) -> dict:
                 # アプリ側はランキング銘柄のアイコンを持っていないため、
                 # CoinGecko のロゴURLをそのまま渡す
                 "iconUrl": r[9],
+                "chains": meta.get(r[4], {}).get("chains", []),
+                "exchanges": meta.get(r[4], {}).get("exchanges", []),
             }
         )
 
