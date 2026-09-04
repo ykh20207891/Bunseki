@@ -59,6 +59,13 @@ def step_predict():
     predict.run_predict(horizon=7, top_n=20, model_tag=None, skip_importance=True)
 
 
+def step_track_performance():
+    """週1回（月曜）だけ検証を回し、成績の推移を記録する。
+    重いので他の曜日は即スキップされる。"""
+    import track_performance
+    track_performance.run()
+
+
 def step_coin_meta():
     """ランキング上位のチェーン/取扱取引所を取得（予測の後に実行する）。"""
     import coin_meta
@@ -102,6 +109,7 @@ def build_steps(dashboard_out: str | None):
         ("ai_enrich", step_ai_enrich, False),
         ("predict", step_predict, False),
         ("coin_meta", step_coin_meta, False),
+        ("track_performance", step_track_performance, False),
         ("dashboard", make_dashboard_step(dashboard_out), False),
         ("export_json", make_export_json_step(dashboard_out), False),
     ]

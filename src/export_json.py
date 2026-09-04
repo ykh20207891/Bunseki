@@ -151,6 +151,15 @@ def _price_on_or_after(conn, coin_id: str, date: str) -> float | None:
     return float(row[0]) if row and row[0] is not None else None
 
 
+def _performance_history() -> list:
+    """週次検証の成績推移。未記録なら空リスト。"""
+    try:
+        import track_performance
+        return track_performance.history(limit=12)
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _load_meta(conn) -> dict[str, dict]:
     """coin_meta（チェーン/取引所）を辞書で返す。未取得なら空。"""
     meta: dict[str, dict] = {}
@@ -367,6 +376,8 @@ def gather_latest(conn, horizon: int, top_n: int) -> dict:
         "baseline": bands.get("overall", {}),
         # 先週の予測が実際どうなったかの答え合わせ
         "review": gather_review(conn, horizon, len(items) or top_n, predicted_on),
+        # 週次検証で記録した成績の推移
+        "performance": _performance_history(),
         "items": items,
     }
 
