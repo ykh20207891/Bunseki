@@ -92,11 +92,24 @@ def _needs_refresh(conn, coin_id: str) -> bool:
 
 
 def _target_coins(conn, top_n: int) -> list[str]:
-    """直近の予測（月曜優先）の上位 top_n 銘柄。"""
+    """表示に使う予測（直近の月曜）の上位 top_n 銘柄。
+
+    アプリが出すランキングは月曜固定なので、ここも同じ日を対象にしないと
+    表示中の銘柄のチェーン/取引所が埋まらない。
+    """
     row = conn.execute(
         "SELECT predicted_on, model_tag FROM predictions "
-        "WHERE horizon_days = 7 ORDER BY predicted_on DESC LIMIT 1"
+        "WHERE horizon_days = 7 "
+        "  AND CAST(strftime('%w', predicted_on) AS INTEGER) = 1 "
+        "ORDER BY predicted_on DESC LIMIT 1"
     ).fetchone()
+
+    if not row:
+        # 運用初期など月曜の予測がまだ無い場合は最新で代替
+        row = conn.execute(
+            "SELECT predicted_on, model_tag FROM predictions "
+            "WHERE horizon_days = 7 ORDER BY predicted_on DESC LIMIT 1"
+        ).fetchone()
     if not row:
         return []
 

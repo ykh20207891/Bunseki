@@ -32,7 +32,7 @@ from db import connect, init_db  # noqa: E402
 
 LOG = setup_logger("export_json")
 
-DEFAULT_TOP_N = 10
+DEFAULT_TOP_N = 30
 
 # ウォークフォワード検証(backtest_oos_h7.csv / 39,268件・142期間)から集計した
 # 「その順位帯の銘柄が7日後に上昇していた実績割合」。

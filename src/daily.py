@@ -62,7 +62,7 @@ def step_predict():
 def step_coin_meta():
     """ランキング上位のチェーン/取扱取引所を取得（予測の後に実行する）。"""
     import coin_meta
-    coin_meta.run(top_n=10)
+    coin_meta.run(top_n=30)
 
 
 def make_export_json_step(dashboard_out: str | None):
