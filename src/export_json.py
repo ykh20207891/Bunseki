@@ -151,6 +151,20 @@ def _price_on_or_after(conn, coin_id: str, date: str) -> float | None:
     return float(row[0]) if row and row[0] is not None else None
 
 
+def _load_meta(conn) -> dict[str, dict]:
+    """coin_meta（チェーン/取引所）を辞書で返す。未取得なら空。"""
+    meta: dict[str, dict] = {}
+    try:
+        for m in conn.execute("SELECT coin_id, chains, exchanges FROM coin_meta"):
+            meta[m[0]] = {
+                "chains": json.loads(m[1] or "[]"),
+                "exchanges": json.loads(m[2] or "[]"),
+            }
+    except Exception:  # noqa: BLE001
+        pass
+    return meta
+
+
 def gather_review(conn, horizon: int, top_n: int, current_on: str | None) -> dict | None:
     """1つ前の月曜予測について、実際にどうなったかを集計する（答え合わせ）。"""
     row = conn.execute(
@@ -190,10 +204,13 @@ def gather_review(conn, horizon: int, top_n: int, current_on: str | None) -> dic
         (horizon, predicted_on, model_tag, top_n),
     ).fetchall()
 
+    meta = _load_meta(conn)
     items = []
     ups = 0
     total_ret = 0.0
     scored = 0
+    # チェーン別に「上がった数 / 対象数 / 平均騰落率」を集計する
+    by_chain: dict[str, dict] = {}
 
     for r in rows:
         rank, symbol, coin_id, price_before = r[0], r[1], r[2], r[3]
@@ -207,6 +224,17 @@ def gather_review(conn, horizon: int, top_n: int, current_on: str | None) -> dic
             if change > 0:
                 ups += 1
 
+        chains = meta.get(coin_id, {}).get("chains", [])
+        exchanges = meta.get(coin_id, {}).get("exchanges", [])
+
+        if change is not None:
+            for chain in chains:
+                agg = by_chain.setdefault(chain, {"up": 0, "total": 0, "sum": 0.0})
+                agg["total"] += 1
+                agg["sum"] += change
+                if change > 0:
+                    agg["up"] += 1
+
         items.append(
             {
                 "rank": rank,
@@ -216,6 +244,8 @@ def gather_review(conn, horizon: int, top_n: int, current_on: str | None) -> dic
                 "priceBefore": price_before,
                 "priceAfter": price_after,
                 "changePct": round(change, 2) if change is not None else None,
+                "chains": chains,
+                "exchanges": exchanges,
             }
         )
 
@@ -230,6 +260,19 @@ def gather_review(conn, horizon: int, top_n: int, current_on: str | None) -> dic
         "scored": scored,
         "upRate": round(ups / scored, 4) if scored else None,
         "avgChangePct": round(total_ret / scored, 2) if scored else None,
+        # チェーン別の成績（上がった数が多い順）
+        "byChain": sorted(
+            [
+                {
+                    "chain": chain,
+                    "up": v["up"],
+                    "total": v["total"],
+                    "avgChangePct": round(v["sum"] / v["total"], 2),
+                }
+                for chain, v in by_chain.items()
+            ],
+            key=lambda x: (-x["up"], -x["avgChangePct"]),
+        ),
     }
 
 
@@ -272,15 +315,7 @@ def gather_latest(conn, horizon: int, top_n: int) -> dict:
     ).fetchall()
 
     # チェーン/取引所（coin_meta。未取得なら空で出す）
-    meta: dict[str, dict] = {}
-    try:
-        for m in conn.execute("SELECT coin_id, chains, exchanges FROM coin_meta"):
-            meta[m[0]] = {
-                "chains": json.loads(m[1] or "[]"),
-                "exchanges": json.loads(m[2] or "[]"),
-            }
-    except Exception:  # noqa: BLE001
-        pass  # テーブル未作成なら省略
+    meta = _load_meta(conn)
 
     items = []
     for r in rows:

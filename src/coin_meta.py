@@ -23,7 +23,8 @@ from db import connect, init_db  # noqa: E402
 LOG = setup_logger("coin_meta")
 
 CACHE_DAYS = 7
-SLEEP_SEC = 2.5  # 無料APIのレート制限（約10-30req/分）に配慮
+# 無料APIは体感 10-30req/分。10銘柄なら余裕を見てこの間隔で回す。
+SLEEP_SEC = 6.0
 MAX_EXCHANGES = 5
 
 # 表示用のチェーン名（CoinGecko の platform id → 一般的な呼び名）
@@ -42,6 +43,22 @@ CHAIN_LABELS = {
     "the-open-network": "TON",
     "cardano": "Cardano",
     "polkadot": "Polkadot",
+    # 自分自身がチェーンの基盤通貨（platforms が空になる）
+    "bitcoin": "Bitcoin",
+    "ripple": "XRP Ledger",
+    "litecoin": "Litecoin",
+    "dogecoin": "Dogecoin",
+    "monero": "Monero",
+    "cosmos": "Cosmos",
+    "near": "NEAR",
+    "algorand": "Algorand",
+    "stellar": "Stellar",
+    "hedera-hashgraph": "Hedera",
+    "internet-computer": "ICP",
+    "filecoin": "Filecoin",
+    "celo": "Celo",
+    "flow": "Flow",
+    "harmony": "Harmony",
 }
 
 # 日本から使いやすい/主要な取引所を優先して表示する
@@ -107,13 +124,29 @@ def _pick_exchanges(tickers: list[dict]) -> list[str]:
     return (preferred + others)[:MAX_EXCHANGES]
 
 
-def _pick_chains(platforms: dict) -> list[str]:
+def _pick_chains(platforms: dict, payload: dict) -> list[str]:
+    """発行チェーン。トークンでない（自分自身がチェーン）場合はそれを返す。"""
     chains = []
     for key in (platforms or {}):
         if not key:
             continue
         chains.append(CHAIN_LABELS.get(key, key.replace("-", " ").title()))
-    return chains[:3]
+
+    if chains:
+        return chains[:3]
+
+    # BTC/ETH/SOL のような基盤通貨は platforms が空になる。
+    # asset_platform_id が無い＝トークンではないので、自分自身をチェーンとする。
+    if not payload.get("asset_platform_id"):
+        own = payload.get("id") or ""
+        label = CHAIN_LABELS.get(own)
+        if label:
+            return [label]
+        name = (payload.get("name") or "").strip()
+        if name:
+            return [name]
+
+    return []
 
 
 def run(top_n: int = 10) -> int:
@@ -140,10 +173,12 @@ def run(top_n: int = 10) -> int:
             try:
                 payload = json.loads(http_get_text(url, headers, 30, 2))
             except Exception as e:  # noqa: BLE001
+                # 保存しないので、次回の実行で再挑戦される
                 LOG.warning("%s の取得に失敗: %s", coin_id, e)
+                time.sleep(SLEEP_SEC)
                 continue
 
-            chains = _pick_chains(payload.get("platforms") or {})
+            chains = _pick_chains(payload.get("platforms") or {}, payload)
             exchanges = _pick_exchanges(payload.get("tickers") or [])
 
             conn.execute(
